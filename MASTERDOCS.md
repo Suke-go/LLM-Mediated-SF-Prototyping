@@ -78,6 +78,7 @@
 - Optional Agent 0: Corpus/OCR Orchestrator — WISS予稿のOCR・整形・セクション抽出（「未来ビジョン」検出を補助）。
 - Optional Agent 5: Critic/Evaluator — 整合性・独自性・可読性・倫理/安全を評価し、改善要求を発行。
 - Optional Agent 6: Network Weaver — WISS内の他アイディアとのリンク提案（共創促進）。
+- Optional Agent 3b: Illustration Selector & Prompt Strategist — イラスト対象ページの選定とプロンプト戦略の最適化。
 
 ### エージェントの役割（高レベル）
 - Agent 1 — Vision Extractor
@@ -163,11 +164,68 @@
   "calls_to_action": [""]
 }
 
-// IllustrationComponentsScriptClass（絵本向けの画面指示）
+// IllustrationComponentsScriptClass（絵本向けの画面指示; プロンプト多様性と選定方針を含む）
 {
+  "selection": {
+    "budget": 12,                        // 例: 24ページ中、12ページをイラスト化
+    "spread_ratio": 0.25,                // 見開き(2ページ)の割合
+    "policy": "coverage-importance",     // 目的関数の方針
+    "criteria_weights": {                // 重み例（調整可能）
+      "importance": 0.4,
+      "visual_salience": 0.3,
+      "diversity": 0.2,
+      "coverage": 0.1
+    },
+    "notes": ["核となる発明の初出、感情的転換点、舞台転換を優先"]
+  },
+  "prompt_method": "descriptive|structured|scene-graph|dsl|image-to-image|control-guided",
+  "prompt_template": {
+    "blocks": {
+      "subject": "主要被写体",
+      "action": "動き/関係",
+      "context": "舞台/時刻/雰囲気",
+      "style": "画風/質感/参考作品",
+      "composition": "構図/距離/視点",
+      "camera": "焦点距離/角度",
+      "lighting": "光源/コントラスト",
+      "color": "配色/パレット",
+      "negative": "避けたい要素"
+    }
+  },
+  "consistency": {                       // シリーズ内の統一性確保
+    "character_anchors": [
+      {"id": "char-1", "refs": [""], "descriptors": ["年齢/服装/髪型/シルエット"]}
+    ],
+    "prop_anchors": [
+      {"id": "prop-1", "refs": [""], "descriptors": ["サイズ/材質/意匠"]}
+    ],
+    "palette": ["#112233", "#ddeeff"],
+    "style_lock": ["flat", "clean-lines"]
+  },
+  "rendering_params": {
+    "aspect_ratio": "3:2",
+    "resolution": "1024x682",
+    "seed": 123,
+    "variations": 2
+  },
+  "pacing": {
+    "page_tempo": "gradual|sudden|rhythmic|linger",
+    "transition_policy": "hard-cut|dissolve|match-cut",
+    "notes": ["ページ間のペーシングと遷移を統一語彙で指定"]
+  },
+  "control_inputs": [                    // 必要に応じて制御信号
+    {"type": "pose|depth|edges|layout|mask", "source": "path-or-instruction"}
+  ],
   "page_scripts": [
     {
       "page": 1,
+      "illustrate": true,
+      "type": "full|spread|spot",
+      "priority": 0.9,                   // 選定スコア
+      "selection_reason": "ビジョンの核/世界観の導入",
+      "timing": "gradual|sudden|rhythmic|linger",
+      "transition_from_prev": "hard-cut|dissolve|match-cut",
+      "cause_effect": {"cause": "", "effect": ""},
       "caption": "",
       "depiction": "主要被写体・関係・動き",
       "composition": "wide|close|bird-eye|worm-eye",
@@ -175,6 +233,11 @@
       "camera": "focal-length/angle",
       "lighting": "", "color": "",
       "assets": ["prop/system/environment"],
+      "audio_cues": {"sfx": [""], "ambience": ""},
+      "consistency_refs": ["char-1", "prop-1"],
+      "control_refs": [0],               // control_inputsの参照
+      "prompt": "freeform-or-templated",
+      "negative": "避ける要素",
       "safety_notes": ["肖像権/著作権/配慮事項"]
     }
   ]
@@ -192,6 +255,33 @@
   "asset_manifest": ["必要小物・舞台・キャラ"]
 }
 ```
+
+### イラスト選定ポリシー（どの部分を描くか）
+- 候補抽出: `ScenarioComponentsScriptsClass.beats/scenes/key_props`から、以下に該当するページ候補を列挙。
+  - 発明/システムの初出、使用がわかる瞬間、舞台転換、感情の転換点（inciting, midpoint, climax, resolution）。
+  - 世界観の手掛かりが多い場面（環境・小物・関係性が密）。
+- スコアリング: `importance`（物語/概念の核）+ `visual_salience`（視覚的伝達力）+ `diversity`（舞台/構図の多様性）+ `coverage`（各Actの均衡）。
+- 分配の目安（24ページ例）: 導入×2、きっかけ×1、展開×3、ミッドポイント×1、逆転/山場×3、解決×1、終章×1（見開きを要所に配置）。
+- 種別の使い分け: `type=spread`は世界観提示・山場、`full`は主要シーン、`spot`は説明補助や静物・UI要素。
+- 低視覚性の場面: 言語中心のページは象徴モチーフ/ダイアグラムで補完し、長文を避ける。
+- アクセシビリティ: 代替テキストの方針、低視力向けコントラスト/文字サイズを設計に反映。
+
+### プロンプト方式（複数アプローチの運用）
+- 方式の型:
+  - descriptive: 自然文で包括的に記述（迅速だが再現性はやや低い）。
+  - structured: `prompt_template.blocks`に沿ったタグ構成（再現性と編集性が高い）。
+  - scene-graph: 被写体/関係/空間をグラフで定義→文章化（複雑構図に有効）。
+  - dsl: ショットリスト/ストーリーボードの簡易言語で記述（連作に強い）。
+  - image-to-image: 参考画像/ラフ→変換（既存資産や作風合わせ）。
+  - control-guided: pose/depth/edges/layout/mask等で構図や整合性を強制。
+- 選択ガイド:
+  - 一貫性を重視: structured or dsl + consistency anchors。
+  - 複雑な群像/UI: scene-graph + control-guided。
+  - 既存作風/資料あり: image-to-image + inpaint/mask。
+  - 素早い試行: descriptiveで方向を探索→確定後structuredへ移行。
+- 影響の統合: `AuthorClass/ArtistClass`の`style_tags/palette/reference_works`を`style_influence`へ反映。
+- 安全/品質ノート: `negative`に不適切要素、アーティファクト、過度な写実/露出などの回避条件を明示。
+- 成果物: 各ページに「プロンプト束（prompt, negative, control_refs, consistency_refs, rendering_params）」を保存し再現性を担保。
 
 ### I/O契約と運用
 - 形式: JSON（UTF-8, LF）。段階ごとにファイルを保存し、差分を追跡可能にする。
